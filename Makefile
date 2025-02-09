@@ -10,7 +10,7 @@ all:
 	LIBRARY_TYPE=relocatable alr build
 
 clean:
-	rm -rf .objs .libs
+	rm -rf .objs .lib
 
 deploy: all
 	rm -rf install
@@ -18,7 +18,7 @@ deploy: all
 	$(INSTALL) -d install/WEB-INF
 	$(INSTALL) -d install/WEB-INF/lib
 	$(INSTALL) -d install/WEB-INF/lib/x86_64-linux
-	$(INSTALL_libs) .libs/libhello_world$(SOEXT) \
+	$(INSTALL_libs) .lib/libissa$(SOEXT) \
 	    install/WEB-INF/lib/x86_64-linux/
 	$(INSTALL_data) $(WEBXML) install/WEB-INF/web.xml
 

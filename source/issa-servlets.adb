@@ -1,15 +1,45 @@
---  SPDX-FileCopyrightText: 2024 Max Reznik <reznikmm@gmail.com>
+--  SPDX-FileCopyrightText: 2024-2025 Max Reznik <reznikmm@gmail.com>
 --
 --  SPDX-License-Identifier: MIT
 ----------------------------------------------------------------
 
-with Issa.Sessions;
+with Ada.Wide_Wide_Text_IO;
+
+with League.Holders;
+with League.JSON.Arrays;
+with League.JSON.Documents;
+with League.JSON.Values;
+with League.String_Vectors;
+
+--  with Issa.Sessions;
 
 package body Issa.Servlets is
+
+   use type League.String_Vectors.Universal_String_Vector;
 
    function "+"
      (Text : Wide_Wide_String) return League.Strings.Universal_String
       renames League.Strings.To_Universal_String;
+
+   procedure Set_Common_Headers
+    (Self     : Issa_Servlet'Class;
+     Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class);
+
+   procedure Get_Config
+    (Self     : Issa_Servlet'Class;
+     Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class);
+
+   procedure Get_Comments
+    (Self     : Issa_Servlet'Class;
+     Request  : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
+     Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class);
+
+   Config : League.String_Vectors.Universal_String_Vector;
+
+   Application_JSON : constant League.Strings.Universal_String :=
+     +"application/json";
+
+   UTF_8 : constant League.Strings.Universal_String := +"utf-8";
 
    ------------
    -- Do_Get --
@@ -20,27 +50,116 @@ package body Issa.Servlets is
      Request  : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
      Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class)
    is
-      pragma Unreferenced (Self);
+      --  Session   : constant not null Sessions.HTTP_Session_Access :=
+      --    Sessions.HTTP_Session_Access (Request.Get_Session);
 
-      Counter   : Natural;
-
-      Session   : constant not null Sessions.HTTP_Session_Access :=
-        Sessions.HTTP_Session_Access (Request.Get_Session);
-
+      Path : constant League.String_Vectors.Universal_String_Vector :=
+        Request.Get_Path_Info;
    begin
-      Session.Count (Counter);
+      Ada.Wide_Wide_Text_IO.Put_Line ("Path_Info:");
+      for J in 1 .. Path.Length loop
+         Ada.Wide_Wide_Text_IO.Put_Line (Path.Element (J).To_Wide_Wide_String);
+      end loop;
 
-      Response.Set_Status (Servlet.HTTP_Responses.OK);
-      Response.Set_Content_Type (+"text/html");
-      Response.Set_Character_Encoding (+"utf-8");
+      if Path.Is_Empty then
+         Self.Get_Comments (Request, Response);
+      elsif Path = Config then
+         Self.Get_Config (Response);
+      else
+         Response.Set_Status (Servlet.HTTP_Responses.Not_Found);
+         Response.Set_Content_Type (+"text/plain");
+         Response.Set_Character_Encoding (UTF_8);
+         Response.Get_Output_Stream.Write (+"No such request: ");
+         Response.Get_Output_Stream.Write (Path.Join ('/'));
+      end if;
 
-      declare
-         Text : constant Wide_Wide_String :=
-           "Counter:" & Natural'Wide_Wide_Image (Counter);
-      begin
-         Response.Get_Output_Stream.Write (+Text);
-      end;
+      --  Session.Count (Counter);
    end Do_Get;
+
+   ----------------
+   -- Do_Options --
+   ----------------
+
+   overriding procedure Do_Options
+    (Self     : in out Issa_Servlet;
+     Request  : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
+     Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class) is
+   begin
+      Self.Set_Common_Headers (Response);
+      Response.Set_Status (Servlet.HTTP_Responses.OK);
+      Response.Set_Content_Type (+"text/plain");
+      Response.Set_Character_Encoding (UTF_8);
+   end Do_Options;
+
+   ------------------
+   -- Get_Comments --
+   ------------------
+
+   procedure Get_Comments
+    (Self     : Issa_Servlet'Class;
+     Request  : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
+     Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class)
+   is
+      URI    : constant League.Strings.Universal_String :=
+        Request.Get_Parameter (+"uri");
+      pragma Unreferenced (URI);
+      Total  : League.Holders.Universal_Integer := 0;
+      Hidden : constant League.Holders.Universal_Integer := 0;
+      List   : League.JSON.Arrays.JSON_Array;
+      JSON : League.JSON.Objects.JSON_Object;
+      Text : League.Strings.Universal_String;
+   begin
+      JSON.Insert (+"id", League.JSON.Values.Null_JSON_Value);
+      --  Id of the comment `replies` is the list of replies of. `null` for the
+      --  list of top-level comments.
+
+      JSON.Insert (+"replies", List.To_JSON_Value);
+      --  The list of comments. Each comment also has the `total_replies`,
+      --  `replies`, `id` and `hidden_replies` properties to represent nested
+      --  comments.
+
+      Total := League.Holders.Universal_Integer (List.Length);
+      --  ???
+
+      JSON.Insert (+"total_replies", League.JSON.Values.To_JSON_Value (Total));
+      --  The number of replies if the `limit` parameter was not set. If
+      --  `after` is set to `X`, this is the number of comments that were
+      --  created after `X`. So setting `after` may change this value!
+
+      JSON.Insert
+        (+"hidden_replies", League.JSON.Values.To_JSON_Value (Hidden));
+      --  The number of comments that were omitted from the results because of
+      --  the `limit` request parameter. Usually, this will be `total_replies`
+      --  - `limit`.
+
+      JSON.Insert (+"config", Self.Config.To_JSON_Value);
+      Self.Set_Common_Headers (Response);
+      Response.Set_Status (Servlet.HTTP_Responses.OK);
+      Response.Set_Content_Type (Application_JSON);
+      Response.Set_Character_Encoding (UTF_8);
+      Text := JSON.To_JSON_Document.To_JSON;
+      Response.Get_Output_Stream.Write (Text);
+   end Get_Comments;
+
+   ----------------
+   -- Get_Config --
+   ----------------
+
+   procedure Get_Config
+    (Self     : Issa_Servlet'Class;
+     Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class)
+   is
+      JSON : League.JSON.Objects.JSON_Object;
+      Text : League.Strings.Universal_String;
+   begin
+      JSON.Insert (+"config", Self.Config.To_JSON_Value);
+      Self.Set_Common_Headers (Response);
+      Response.Set_Status (Servlet.HTTP_Responses.OK);
+      Response.Set_Content_Type (Application_JSON);
+      Response.Set_Character_Encoding (UTF_8);
+      Text := JSON.To_JSON_Document.To_JSON;
+      Response.Get_Output_Stream.Write (Text);
+   end Get_Config;
 
    ----------------------
    -- Get_Servlet_Info --
@@ -66,8 +185,50 @@ package body Issa.Servlets is
          return Issa_Servlet
    is
       pragma Unreferenced (Parameters);
+
+      JSON_False : constant League.JSON.Values.JSON_Value :=
+        League.JSON.Values.To_JSON_Value (False);
    begin
-      return (Servlet.HTTP_Servlets.HTTP_Servlet with null record);
+      return Result : Issa_Servlet :=
+        (Servlet.HTTP_Servlets.HTTP_Servlet with
+           Server => +"http://192.168.1.121:8081",
+         Config => <>)
+      do
+         --  Result.Config.Insert (+"avatar", JSON_False);
+         Result.Config.Insert (+"feed", JSON_False);
+         Result.Config.Insert (+"gravatar", JSON_False);
+         Result.Config.Insert (+"reply-notifications", JSON_False);
+         Result.Config.Insert (+"reply-to-self", JSON_False);
+         Result.Config.Insert (+"require-author", JSON_False);
+         Result.Config.Insert (+"require-email", JSON_False);
+      end return;
    end Instantiate;
 
+   ------------------------
+   -- Set_Common_Headers --
+   ------------------------
+
+   procedure Set_Common_Headers
+    (Self     : Issa_Servlet'Class;
+     Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class)
+   is
+      pragma Unreferenced (Self);
+   begin
+      Response.Set_Header (+"Access-Control-Allow-Credentials", +"true");
+
+      Response.Set_Header
+        (+"Access-Control-Allow-Headers", +"Origin, Referer, Content-Type");
+
+      Response.Set_Header
+        (+"Access-Control-Allow-Methods", +"HEAD, GET, POST, PUT, DELETE");
+
+      Response.Set_Header
+        (+"Access-Control-Allow-Origin", +"http://192.168.1.121:8081");
+
+      Response.Set_Header
+        (+"Access-Control-Expose-Heades", +"X-Set-Cookie, Date");
+   end Set_Common_Headers;
+
+begin
+   Config.Append (+"config");
 end Issa.Servlets;

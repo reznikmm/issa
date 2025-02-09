@@ -6,7 +6,7 @@
 with "issa_config.gpr";
 project Issa is
 
-   for Library_Name use "Issa";
+   for Library_Name use "issa";
    for Library_Version use Project'Library_Name & ".so." & Issa_Config.Crate_Version;
 
    for Source_Dirs use ("../source");
@@ -18,6 +18,10 @@ project Issa is
    Library_Type : Library_Type_Type :=
      external ("ISSA_LIBRARY_TYPE", external ("LIBRARY_TYPE", "static"));
    for Library_Kind use Library_Type;
+
+   for Library_Interface use
+    ("Issa.Startup",
+     "Issa.Startup_Hook");
 
    package Compiler is
       for Default_Switches ("Ada") use Issa_Config.Ada_Compiler_Switches;

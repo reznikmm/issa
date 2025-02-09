@@ -1,6 +1,6 @@
 <?xml version='1.0'?>
 <web-app xmlns='http://forge.ada-ru.org/matreshka/xml/ns/spikedogdd'>
-  <library-name>hello_world</library-name>
+  <library-name>issa</library-name>
 
   <servlet>
     <servlet-name>Hello</servlet-name>
@@ -8,7 +8,7 @@
   </servlet>
   <servlet-mapping>
     <servlet-name>Hello</servlet-name>
-    <url-pattern>/count</url-pattern>
+    <url-pattern>/issa/*</url-pattern>
   </servlet-mapping>
 
 </web-app>
