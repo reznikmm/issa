@@ -11,4 +11,14 @@
     <url-pattern>/issa/*</url-pattern>
   </servlet-mapping>
 
+  <servlet>
+    <servlet-name>File</servlet-name>
+    <servlet-tag>ISSA.FILE.FILE_SERVLET</servlet-tag>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>File</servlet-name>
+    <url-pattern>/issa/js/*</url-pattern>
+    <url-pattern>/issa/css/*</url-pattern>
+  </servlet-mapping>
+
 </web-app>

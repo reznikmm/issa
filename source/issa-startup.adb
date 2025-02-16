@@ -11,8 +11,11 @@ with Spikedog.Servlet_Contexts;
 with Issa.Sessions.Managers;
 
 --  List of used servlets:
-with Issa.Servlets;
-pragma Unreferenced (Issa.Servlets);
+with Issa.File;      pragma Unreferenced (Issa.File);
+with Issa.Servlets;  pragma Unreferenced (Issa.Servlets);
+
+with Matreshka.Internals.SQL_Drivers.SQLite3.Factory;
+pragma Unreferenced (Matreshka.Internals.SQL_Drivers.SQLite3.Factory);
 
 package body Issa.Startup is
 

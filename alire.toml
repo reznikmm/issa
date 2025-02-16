@@ -23,3 +23,6 @@ development.contracts = "Yes"
 
 [[depends-on]]
 matreshka_spikedog_api = "^21.0.0"
+matreshka_sql = "^21.0.0"
+matreshka_sql_sqlite3 = "^21.0.0"
+
