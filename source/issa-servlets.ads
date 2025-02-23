@@ -38,6 +38,11 @@ private
      Request  : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
      Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class);
 
+   overriding procedure Do_Post
+    (Self     : in out Issa_Servlet;
+     Request  : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
+     Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class);
+
    overriding function Instantiate
     (Parameters : not null access
        Servlet.Generic_Servlets.Instantiation_Parameters'Class)

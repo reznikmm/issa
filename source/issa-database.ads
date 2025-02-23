@@ -14,9 +14,9 @@ package Issa.Database is
    type Comment is record
       Id             : League.Holders.Universal_Integer;
       Parent         : League.Holders.Universal_Integer;
-      Created        : League.Holders.Universal_Float;
+      Created        : League.Holders.Universal_Integer;
       --  League.Calendars.Date_Time;
-      Modified       : League.Holders.Universal_Float;
+      Modified       : League.Holders.Universal_Integer;
       Mode           : Comment_Status;
       Text           : League.Strings.Universal_String;
       Author         : League.Strings.Universal_String;
@@ -38,8 +38,8 @@ package Issa.Database is
    --      tid REFERENCES threads(id),
    --      id INTEGER PRIMARY KEY,
    --      parent INTEGER,
-   --      created FLOAT NOT NULL,
-   --      modified FLOAT,  --  FLOAT NOT ???
+   --      created FLOAT NOT NULL DEFAULT current_timestamp,
+   --      modified FLOAT NOT NULL DEFAULT current_timestamp,
    --      mode INTEGER,
    --      remote_addr VARCHAR,
    --      text VARCHAR NOT NULL,
@@ -55,5 +55,18 @@ package Issa.Database is
    procedure Fetch
      (URI      : League.Strings.Universal_String;
       Callback : not null access procedure (X : Comment));
+
+   procedure Select_Or_Insert_Thread
+     (URI : League.Strings.Universal_String;
+      Id  : out Positive);
+
+   procedure Add_Comment
+     (Thread : Natural;
+      Parent : Natural;
+      Mode   : Comment_Status;
+      Text   : League.Strings.Universal_String;
+      Author : League.Strings.Universal_String;
+      Email  : League.Strings.Universal_String;
+      Site   : League.Strings.Universal_String);
 
 end Issa.Database;

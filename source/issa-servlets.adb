@@ -3,6 +3,7 @@
 --  SPDX-License-Identifier: MIT
 ----------------------------------------------------------------
 
+with Ada.Streams;
 with Ada.Wide_Wide_Text_IO;
 
 with League.Calendars;
@@ -10,7 +11,9 @@ with League.Holders;
 with League.JSON.Arrays;
 with League.JSON.Documents;
 with League.JSON.Values;
+with League.Stream_Element_Vectors;
 with League.String_Vectors;
+with League.Regexps;
 
 --  with Issa.Sessions;
 with Issa.Database;
@@ -36,11 +39,49 @@ package body Issa.Servlets is
      Request  : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
      Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class);
 
+   procedure New_Comment
+     (Self     : Issa_Servlet'Class;
+      URI      : League.Strings.Universal_String;
+      JSON     : in out League.JSON.Objects.JSON_Object;
+      Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class);
+
+   procedure To_JSON
+    (Request : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
+     JSON    : out League.JSON.Objects.JSON_Object);
+
    Config : League.String_Vectors.Universal_String_Vector;
    Empty : League.String_Vectors.Universal_String_Vector;
+   New_Path : League.String_Vectors.Universal_String_Vector;
 
    Application_JSON : constant League.Strings.Universal_String :=
      +"application/json";
+
+   W  : constant Wide_Wide_String := "[\p{L}\p{N}\p{Pc}]";
+   --  letter, digit or underscores
+
+   Wd : constant Wide_Wide_String := "[\p{L}\p{N}\p{Pc}\-]";
+   --  letter, digit or underscores and a minus
+
+   Domain : constant Wide_Wide_String :=
+     "(?:" &
+     W & "(?:" & Wd & "*" & W & ")?" &
+     "\.)+" &
+     "(?:" & W & "{2,6}\.?|" & Wd & "{2,}\.?)";
+
+   Is_URI_Pattern : constant Wide_Wide_String :=
+     "^https?\:\/\/" &
+     --  domain
+     "(?:" &
+     Domain &
+     "|localhost|" &  --  or localhost
+     "[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}" &  --  or ip v4
+     ")" &
+     "(?:\:[0-9]+)?" &  --  optional port
+     "(?:[\/\?][\P{Separator}]+|\/?)" &  --  URI segments
+     "$";
+
+   Is_URI : constant League.Regexps.Regexp_Pattern :=
+     League.Regexps.Compile (+Is_URI_Pattern);
 
    UTF_8 : constant League.Strings.Universal_String := +"utf-8";
 
@@ -94,6 +135,33 @@ package body Issa.Servlets is
       Response.Set_Character_Encoding (UTF_8);
    end Do_Options;
 
+   -------------
+   -- Do_Post --
+   -------------
+
+   overriding procedure Do_Post
+    (Self     : in out Issa_Servlet;
+     Request  : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
+     Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class)
+   is
+      Path : constant League.String_Vectors.Universal_String_Vector :=
+        Request.Get_Path_Info;
+
+      URI  : constant League.Strings.Universal_String :=
+        Request.Get_Parameter (+"uri");
+
+      JSON : League.JSON.Objects.JSON_Object;
+   begin
+      To_JSON (Request, JSON);
+
+      if Path = New_Path
+        and not JSON.Is_Empty
+        and not URI.Is_Empty
+      then
+         Self.New_Comment (URI, JSON, Response);
+      end if;
+   end Do_Post;
+
    ------------------
    -- Get_Comments --
    ------------------
@@ -110,9 +178,13 @@ package body Issa.Servlets is
 
       List : League.JSON.Arrays.JSON_Array;
 
+      --------------
+      -- Callback --
+      --------------
+
       procedure Callback (V : Issa.Database.Comment) is
          use type League.Holders.Universal_Integer;
-         use type League.Holders.Universal_Float;
+         --  use type League.Holders.Universal_Float;
          Object : League.JSON.Objects.JSON_Object;
 
          Mode_Map : constant array (Issa.Database.Comment_Status)
@@ -277,6 +349,108 @@ package body Issa.Servlets is
       end return;
    end Instantiate;
 
+   -----------------
+   -- New_Comment --
+   -----------------
+
+   procedure New_Comment
+     (Self     : Issa_Servlet'Class;
+      URI      : League.Strings.Universal_String;
+      JSON     : in out League.JSON.Objects.JSON_Object;
+      Response : in out Servlet.HTTP_Responses.HTTP_Servlet_Response'Class)
+   is
+      pragma Unreferenced (Self);
+      procedure Set_Default (Name : Wide_Wide_String);
+
+      function Verify (Comment : League.JSON.Objects.JSON_Object)
+        return League.Strings.Universal_String;
+
+      -----------------
+      -- Set_Default --
+      -----------------
+
+      procedure Set_Default (Name : Wide_Wide_String) is
+         Key : constant League.Strings.Universal_String := +Name;
+      begin
+         if not JSON.Contains (Key) then
+            JSON.Insert (Key, League.JSON.Values.Null_JSON_Value);
+         end if;
+      end Set_Default;
+
+      ------------
+      -- Verify --
+      ------------
+
+      function Verify (Comment : League.JSON.Objects.JSON_Object)
+        return League.Strings.Universal_String
+      is
+
+         Mail : constant League.Strings.Universal_String :=
+           Comment (+"email").To_String;
+
+         Text : constant League.Strings.Universal_String :=
+           Comment (+"text").To_String;
+
+         Site : constant League.Strings.Universal_String :=
+           Comment (+"website").To_String;
+
+         Parent : constant League.JSON.Values.JSON_Value :=
+           Comment (+"parent");
+      begin
+         if Text.Is_Empty then
+            return +"text is missing";
+         elsif not Parent.Is_Integer_Number and not Parent.Is_Null then
+            return +"parent must be an integer or null";
+         elsif Text.Length < 3 then
+            return +"text is too short (minimum length: 3)";
+         elsif Text.Length > 65535 then
+            return +"text is too long (maximum length: 65535)";
+         elsif Mail.Length > 254 then
+            return +"http://tools.ietf.org/html/rfc5321#section-4.5.3";
+         elsif Site.Length > 254 then
+            return +"website is too long (maximum length: 254)";
+         elsif not Site.Is_Empty
+           and then not Is_URI.Find_Match (Site).Is_Matched
+         then
+            return +"website not Django-conform";
+         end if;
+
+         return League.Strings.Empty_Universal_String;
+      end Verify;
+
+      Thread : Positive;
+
+      Error : constant League.Strings.Universal_String :=
+        Verify (JSON);
+   begin
+      Set_Default ("author");
+      Set_Default ("email");
+      Set_Default ("website");
+      Set_Default ("parent");
+
+      if not Error.Is_Empty then
+         Response.Set_Status (Servlet.HTTP_Responses.Bad_Request);
+         Response.Set_Content_Type (+"text/plain");
+         Response.Set_Character_Encoding (UTF_8);
+         Response.Get_Output_Stream.Write (Error);
+         return;
+      end if;
+
+      --  JSON.Insert (+"mode", League.JSON.Values.To_JSON_Value (Moderated));
+      --  JSON.Insert (+"remote_addr", );
+
+      Issa.Database.Select_Or_Insert_Thread (URI, Thread);
+
+      Issa.Database.Add_Comment
+        (Thread => Thread,
+         Parent => Natural (JSON (+"parent").To_Integer),
+         Mode   => Database.Valid,
+         Text   => JSON (+"text").To_String,
+         Author => JSON (+"author").To_String,
+         Email  => JSON (+"email").To_String,
+         Site   => JSON (+"website").To_String);
+   end New_Comment;
+
    ------------------------
    -- Set_Common_Headers --
    ------------------------
@@ -304,7 +478,61 @@ package body Issa.Servlets is
       Response.Add_Date_Header (+"Last-Modified", League.Calendars.Clock);
    end Set_Common_Headers;
 
+   -------------
+   -- To_JSON --
+   -------------
+
+   procedure To_JSON
+    (Request : Servlet.HTTP_Requests.HTTP_Servlet_Request'Class;
+     JSON    : out League.JSON.Objects.JSON_Object)
+   is
+      function "+" (Text : League.Strings.Universal_String)
+        return League.String_Vectors.Universal_String_Vector;
+
+      ---------
+      -- "+" --
+      ---------
+
+      function "+" (Text : League.Strings.Universal_String)
+        return League.String_Vectors.Universal_String_Vector is
+         Result : League.String_Vectors.Universal_String_Vector;
+      begin
+         Result.Append (Text);
+         return Result;
+      end "+";
+
+      Doc    : League.JSON.Documents.JSON_Document;
+      Data   : League.Stream_Element_Vectors.Stream_Element_Vector;
+      Stream : constant not null access Ada.Streams.Root_Stream_Type'Class :=
+        Request.Get_Input_Stream;
+   begin
+      if Request.Get_Headers (+"Content-Type") /= +Application_JSON then
+         return;
+      end if;
+
+      loop
+         declare
+            use type Ada.Streams.Stream_Element_Count;
+            Buffer : Ada.Streams.Stream_Element_Array (1 .. 512);
+            Last   : Ada.Streams.Stream_Element_Count;
+         begin
+            Stream.Read (Buffer, Last);
+            Data.Append (Buffer (1 .. Last));
+            exit when Last = 0;
+         end;
+      end loop;
+      Doc := League.JSON.Documents.From_JSON (Data);
+
+      if Doc.Is_Object then
+         JSON := Doc.To_JSON_Object;
+      end if;
+   exception
+      when others =>
+         null;
+   end To_JSON;
+
 begin
    Config.Append (+"config");
    Empty.Append (+"");
+   New_Path.Append (+"new");
 end Issa.Servlets;
